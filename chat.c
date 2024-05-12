@@ -63,6 +63,67 @@ int initServerNet(int port)
 	close(listensock);
 	fprintf(stderr, "connection made, starting session...\n");
 	/* at this point, should be able to send/recv on sockfd */
+
+	/* ----------Handshake setup----------- */
+
+	//----- Sending SYN+1,ACK -----
+
+		/* Server sends SYN+1, ACK back to Client when SYN is recieved*/
+		char bufferSYN[11];
+		recv(sockfd, bufferSYN, 10, 0);
+		int bufferSYNp1 = atoi(bufferSYN) + 1;
+		string bufferSYNp1_str = std::to_string(bufferSYNp1) + "ACK";
+		const char *bufferSYNp1_char = bufferSYNp1_str.c_str();
+
+		/* Generate the same iv from ISN seed passed over*/
+		int bufferSYNiv = atoi(bufferSYN);
+		unsigned char* iv_temp = ivgen(bufferSYNiv);
+		memcpy(iv_val, iv_temp, 16);
+
+		// SYN recived should be within 32bit unsigned range
+		if (bufferSYNp1 >= 0 && bufferSYNp1 <= 4294967295)  {
+			// send(sockfd, bufferSYN, 11, 0);
+			send(sockfd, bufferSYNp1_char, bufferSYNp1_str.length(), 0);
+		} else {
+			error("Server failed to recieve SYN from client");
+		}
+
+		char buff[10];
+		recv(sockfd, buff, 10, 0);
+
+	/* ----------DiffieHellman Setup----------- */
+
+		//generate private & public keys
+		init("params");
+		NEWZ(a);
+		NEWZ(A);
+		dhGen(a, A);
+
+		//send public key
+		char S[1024];	
+		mpz_get_str(S, 16, A);
+		send(sockfd, S, 1024, 0);
+
+		mpz_set(A_pk, A);
+		mpz_set(A_sk, a);
+
+		//reieve incoming user's public key
+		char buf[1024];
+		recv(sockfd, buf, 1024, 0);
+		mpz_set_str(B_pk, buf, 16);
+			
+		//shared key is calcualted 
+		const size_t klen = 256;
+		unsigned char kA[klen];
+		dhFinal(A_sk, A_pk, B_pk, kA, klen);
+		char dhf[512+1];
+		for(size_t i=0; i < 256; i++) {
+			sprintf(&dhf[i*2], "%02x", kA[i]);
+		}
+
+		//split 512 DHF for two 256 keys (AES & HMAC)
+		memcpy(hmac_key, dhf, 256);
+		memcpy(aes_key, dhf + 256, 256);
 	return 0;
 }
 
@@ -85,6 +146,83 @@ static int initClientNet(char* hostname, int port)
 	if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)
 		error("ERROR connecting");
 	/* at this point, should be able to send/recv on sockfd */
+	/* ----------Handshake setup----------- */
+
+	// ----- Sending SYN -----
+
+		/* ISN Generation - 32 bit unsigned max*/
+		srand(time(0));
+		unsigned long ISN = rand() % 4294967294 + 0;
+
+
+		/* ISN is used as seed to generate IV for AES*/
+		unsigned char* iv_temp = ivgen(ISN);
+		memcpy(iv_val, iv_temp, 16);
+
+		/* Foramted Initial Sequence Number for sending */
+		string ISN_str = std::to_string(ISN);
+		char const *ISN_char = ISN_str.c_str();
+
+		//memcpy(checking, ISN_char, ISN_str.length());
+
+		/* Client sends ISN as SYN request*/
+		send(sockfd, ISN_char, ISN_str.length(), 0);
+
+	// ----- Sending ACK -----
+
+		/* Client sends ACK when SYN+1, ACK is recieved back */
+		char bufferACK[14]; // size char to recieve the SYN+1, ACK from the server
+		recv(sockfd, bufferACK, 14, 0);
+		string bfA_str(bufferACK);
+
+		
+		size_t index = bfA_str.find("ACK");
+		while (index != std::string::npos) {
+			bfA_str.erase(index,3); // removes "ACK" from string
+			index = bfA_str.find("ACK", index);
+		}
+
+		unsigned long bufferACK_int = stoi(bfA_str) - 1; //convert str to int
+		
+		if(bufferACK_int == ISN) {
+			send(sockfd, "ACK", 3, 0);
+		} else {
+			error("Client failed to recieve SYN+1 ACK from server");
+		}
+
+	/* ----------DiffieHellman Setup----------- */
+
+		//generate private & public keys
+		init("params");
+		NEWZ(a);
+		NEWZ(A);
+		dhGen(a, A);
+
+		//recieve incoming user's public key
+		char buf[1024];
+		recv(sockfd, buf, 1024, 0);
+
+		mpz_set(A_pk, A);
+		mpz_set(A_sk, a);
+		mpz_set_str(B_pk, buf, 16);
+
+		//send public key
+		char S[1024];
+		mpz_get_str(S, 16, A);
+		send(sockfd, S, 1024, 0);
+
+		//shared key is calcualted
+		const size_t klen = 256;
+		unsigned char kA[klen];
+		dhFinal(A_sk, A_pk, B_pk, kA, klen);
+		char dhf[512+1];
+		for(size_t i=0; i < 256; i++) {
+			sprintf(&dhf[i*2], "%02x", kA[i]);
+		}
+
+		//split 512 DHF for two 256 key (AES & HMAC)
+		memcpy(hmac_key, dhf, 256);
+		memcpy(aes_key, dhf + 256, 256);
 	return 0;
 }
 
