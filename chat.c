@@ -1,5 +1,5 @@
 #include <gtk/gtk.h>
-#include <glib/gunicode.h> /* for utf8 strlen */
+#include <glib/gunicode.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -12,10 +12,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
-#include <arpa/inet.h> // For byte order conversions
+#include <arpa/inet.h> 
 
 #include "dh.h"
 #include "keys.h"
+
+static GtkTextBuffer* tbuf;
+static GtkEntry* entry;
+static int sockfd;
 
 #ifndef PATH_MAX
 #define PATH_MAX 1024
@@ -23,23 +27,20 @@
 
 mpz_t A_pk, A_sk, B_pk;
 
-// DHF
+
 char hmac_key[256+1];
 unsigned char aes_key[256];
 
 unsigned char iv_val[16+1];
 
-static GtkTextBuffer* tbuf; /* transcript buffer */
-static GtkTextBuffer* mbuf; /* message buffer */
-static GtkTextView*  tview; /* view for transcript */
-static GtkTextMark*   mark; /* used for scrolling to end of transcript, etc */
+static GtkTextBuffer* mbuf; 
+static GtkTextView*  tview; 
+static GtkTextMark*   mark; 
 
-static pthread_t trecv;     /* wait for incoming messages and post to queue */
-void* recvMsg(void*);       /* for trecv */
+static pthread_t trecv;     
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
-/* network stuff... */
 
 static int listensock, sockfd;
 static int isclient = 1;
@@ -131,39 +132,114 @@ static void tsappend(char* message, char** tagnames, int ensurenewline)
     }
 }
 
-static void sendMessage(GtkWidget* w, gpointer data)
-{
-    char* tags[2] = {"self", NULL};
-    tsappend("me: ", tags, 0);
-    GtkTextIter mstart, mend;
-    gtk_text_buffer_get_start_iter(mbuf, &mstart);
-    gtk_text_buffer_get_end_iter(mbuf, &mend);
-    char* message = gtk_text_buffer_get_text(mbuf, &mstart, &mend, FALSE);
-    size_t len = strlen(message);
-    ssize_t nbytes = send(sockfd, message, len, 0);
-    if (nbytes == -1)
-        error("send failed");
-    tsappend(message, NULL, 1);
-    free(message);
-    gtk_text_buffer_set_text(mbuf, "", -1);
-    gtk_widget_grab_focus(w);
+
+gboolean append_to_buffer(gchar *message) {
+    GtkTextIter iter;
+    gtk_text_buffer_get_end_iter(tbuf, &iter);
+    gtk_text_buffer_insert(tbuf, &iter, message, -1);
+    g_free(message);
+    return FALSE;
 }
 
-int main(int argc, char *argv[])
-{
+
+gboolean append_to_buffer(gchar *message);
+
+void sendMessage(GtkButton *button, gpointer user_data) {
+    GtkEntry* entry = GTK_ENTRY(user_data);
+    const gchar* message = gtk_entry_get_text(entry);
+    if (strlen(message) == 0)
+        return;
+
+    ssize_t nbytes = send(sockfd, message, strlen(message), 0);
+    if (nbytes == -1)
+        error("send failed");
+
+ 
+    GtkTextIter iter;
+    gtk_text_buffer_get_end_iter(tbuf, &iter);
+    gtk_text_buffer_insert(tbuf, &iter, message, -1);
+	
+
+   
+    gdk_threads_add_idle((GSourceFunc) append_to_buffer, g_strdup(message));
+
+    gtk_entry_set_text(entry, ""); 
+}
+
+
+void* recvMsg(void* unused) {
+    char buffer[1024];
+    while (1) {
+        ssize_t nbytes = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
+        if (nbytes <= 0) {
+            if (nbytes == 0) {
+               
+                printf("chat: client closed connection\n");
+            } else {
+                error("recv failed");
+            }
+            return NULL;
+        }
+        buffer[nbytes] = '\0'; 
+
+        
+        gdk_threads_add_idle((GSourceFunc) append_to_buffer, g_strdup(buffer));
+    }
+}
+
+
+int main(int argc, char *argv[]) {
     gtk_init(&argc, &argv);
+
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    GtkWidget *view = gtk_text_view_new();
+
+  
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
-    GtkWidget *entry = gtk_entry_new();
-    GtkWidget *send_button = gtk_button_new_with_label("Send");
+    GtkWidget *view = gtk_text_view_new();
+
 
     gtk_container_add(GTK_CONTAINER(scroll), view);
-    gtk_container_add(GTK_CONTAINER(window), scroll);
-    gtk_container_add(GTK_CONTAINER(window), entry);
-    gtk_container_add(GTK_CONTAINER(window), send_button);
+
+    
+    tbuf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
+
+    entry = GTK_ENTRY(gtk_entry_new());
+    GtkWidget *send_button = gtk_button_new_with_label("Send");
+
+    GtkWidget *vbox = gtk_vbox_new(FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(window), vbox);
+
+   
+    gtk_box_pack_start(GTK_BOX(vbox), scroll, TRUE, TRUE, 0);
+
+    GtkWidget *hbox = gtk_hbox_new(FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), hbox, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), GTK_WIDGET(entry), TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), send_button, FALSE, FALSE, 0);
+
+    g_signal_connect(G_OBJECT(send_button), "clicked", G_CALLBACK(sendMessage), entry);
+
+
+    int opt;
+    while ((opt = getopt(argc, argv, "lc:")) != -1) {
+        switch (opt) {
+        case 'l':
+            initServerNet(12345); 
+            break;
+        case 'c':
+            initClientNet(optarg, 12345); 
+            break;
+        default:
+            fprintf(stderr, "Usage: %s [-l] [-c hostname]\n", argv[0]);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    pthread_create(&trecv, NULL, recvMsg, NULL);
 
     gtk_widget_show_all(window);
     gtk_main();
+
     return 0;
 }
+
