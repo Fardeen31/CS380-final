@@ -1,39 +1,19 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSC 380 Project 2 - Secure(?) Chat</title>
-</head>
-<body>
-    <h1>CSC 380 Project 2 - Secure(?) Chat</h1>
+# CSC 380 Project 2 - Secure(?) Chat
 
-    <h2>Concept</h2>
-    <p>This project aims to develop both asymmetric and symmetric encryption systems for secure communication, with a focus on implementing perfect forward secrecy and preventing replay attacks. The system utilizes RSA for asymmetric encryption, leveraging the GMP library for handling arbitrary precision numbers. Simultaneously, a symmetric encryption system labeled as SKE is constructed, functioning exclusively on buffers and files. Key features include:</p>
-    <ul>
-        <li>Implementation of a handshake protocol to establish ephemeral keys with perfect forward secrecy.</li>
-        <li>Mutual authentication using public key cryptography.</li>
-        <li>Encryption of each message with authentication tagging to ensure integrity.</li>
-        <li>Measures to prevent replay attacks.</li>
-    </ul>
+## Concept
+Develop an asymmetric system based on RSA, leveraging the GMP library for handling arbitrary precision numbers. Simultaneously, construct a symmetric system labeled as SKE, which functions exclusively on buffers and files. The following implementations should be made:
+- Write some sort of handshake protocol to setup ephemeral keys (your protocol should have perfect forward secrecy!).
+- Mutual authentication, using public key cryptography.
+- After authentication, each message should be encrypted and tagged with a message authentication code. You may also want to take measures to prevent replay attacks.
 
-    <h2>Compiling the Skeleton</h2>
-    <p>To compile the provided skeleton, follow these steps:</p>
-    <ol>
-        <li>Navigate to the directory containing the skeleton code.</li>
-        <li>Run the compilation command, e.g., <code>make</code>.</li>
-        <li>Once compiled, run <code>./chat -h</code> to view a list of available options.</li>
-        <li>You can test the chat functionality by running the command:</li>
-    </ol>
-    <pre><code>$ ./chat -l &amp; sleep 1 &amp;&amp; ./chat -c localhost &amp;</code></pre>
-    <p>This will open two windows for chat clients. Note that they may initially appear on top of each other, so you may need to move one window to see the other.</p>
 
-    <h2>Members</h2>
-    <p>This project was collaboratively developed by the following team members, who contributed equally:</p>
-    <ul>
-        <li>Shamia Shanaha</li>
-        <li>Fardeen Ahmed</li>
-        <li>Uswa Qamar</li>
-    </ul>
-</body>
-</html>
+```Compiling the skeleton
+Once you do have the skeleton compiled, you can run ./chat -h and see a list of options. You should be able to test it out like this:
+
+$ ./chat -l & sleep 1 && ./chat -c localhost &
+Two windows should appear in a moment, THEY APPEAR ON TOP OF EACH OTHER PLEASE MOVE ONE TO SEE THE OTHER. 
+
+
+
+## Members
+Shamia Shanaha, Fardeen Ahmed, Uswa Qamar all collaborated equally on this project. 
